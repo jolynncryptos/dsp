@@ -1,157 +1,148 @@
+// #include "databaseFile.h"
+// #include <iostream>
+
+// int main() {
+//     DatabaseFile db;
+//     db.loadData("games.txt");
+
+//     std::cout << "Total records: " << db.numRecords() << "\n";
+//     std::cout << "Total blocks: " << db.numBlocks() << "\n";
+//     std::cout << "Record size (bytes): " << Record::getRecordSize() << "\n";
+//     std::cout << "Records per block: " << BLOCK_SIZE / Record::getRecordSize() << "\n";
+//     // db.writeToDisk("nba.bin");
+//     return 0;
+// }
+
+
+#include "databasefile.h"
+#include "bplustree.h"
+#include "record.h"
+#include "block.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
-#include <cmath>
-#include <cstring>   
 
-const int BLOCK_SIZE = 4096; 
 
-#pragma pack(push, 1)
-struct Record {
-    char game_date[16]; 
-    int team_id;
-    int pts_home;
-    float fg_pct_home;
-    float ft_pct_home;
-    float fg3_pct_home;
-    int ast_home;
-    int reb_home;
-    int home_team_wins;
-};
-#pragma pack(pop)
-
-// trim helpers
-static inline std::string trim(const std::string& s) {
-    size_t start = s.find_first_not_of(" \t\r\n");
-    if (start == std::string::npos) return "";
-    size_t end = s.find_last_not_of(" \t\r\n");
-    return s.substr(start, end - start + 1);
-}
-
-int toIntSafe(const std::string &s) {
-    std::string t = trim(s);
-    if (t.empty()) return 0;
-    try { return std::stoi(t); }
-    catch (...) { return 0; }
-}
-
-float toFloatSafe(const std::string &s) {
-    std::string t = trim(s);
-    if (t.empty()) return 0.0f;
-    try { return std::stof(t); }
-    catch (...) { return 0.0f; }
-}
-
-std::vector<std::string> splitBy(const std::string &line, char delim) {
-    std::vector<std::string> cols;
-    std::stringstream ss(line);
-    std::string item;
-    while (std::getline(ss, item, delim)) cols.push_back(trim(item));
-    return cols;
-}
-
-// parse line given a delimiter (tab or comma)
-Record parseLine(const std::string& line, char delim) {
-    Record rec;
-    std::memset(&rec, 0, sizeof(rec));
-
-    auto cols = splitBy(line, delim);
-
-    // If delimiter detection was wrong (very unlikely), try comma as fallback
-    if (cols.size() < 9 && delim != ',') {
-        auto cols2 = splitBy(line, ',');
-        if (cols2.size() >= 9) cols = std::move(cols2);
-    }
-
-    // Now map columns (guarded with existence checks)
-    if (cols.size() >= 1) {
-        std::strncpy(rec.game_date, cols[0].c_str(), sizeof(rec.game_date) - 1);
-        rec.game_date[sizeof(rec.game_date) - 1] = '\0';
-    }
-    if (cols.size() >= 2) rec.team_id = toIntSafe(cols[1]);
-    if (cols.size() >= 3) rec.pts_home = toIntSafe(cols[2]);
-    if (cols.size() >= 4) rec.fg_pct_home = toFloatSafe(cols[3]);
-    if (cols.size() >= 5) rec.ft_pct_home = toFloatSafe(cols[4]);
-    if (cols.size() >= 6) rec.fg3_pct_home = toFloatSafe(cols[5]);
-    if (cols.size() >= 7) rec.ast_home = toIntSafe(cols[6]);
-    if (cols.size() >= 8) rec.reb_home = toIntSafe(cols[7]);
-    if (cols.size() >= 9) rec.home_team_wins = toIntSafe(cols[8]);
-
-    return rec;
-}
-
-int main() {
+// Task 1: Reporting statistics
+void task1(Database &db) {
     const std::string inputFile = "games.txt";
-    const std::string dbFile = "games_db.bin";
+    const std::string dbFile = "games_db.bin"; //whERE IS THE DBFILEEEEEEEE
+    std::cout << "Task 1 Report:" << std::endl;
+    std::cout << "---------------------------------" << std::endl;
+    std::cout << "Record size (bytes): " << db.getRecordSize() << std::endl;
+    std::cout << "Total number of records: " << db.getTotalRecords() << std::endl;
+    std::cout << "Number of records per block: " << db.getRecordsPerBlock() << std::endl;
+    std::cout << "Number of blocks for storing data: " << db.getNumBlocks() << std::endl;
+    std::cout << "---------------------------------" << std::endl;
 
-    std::ifstream inFile(inputFile);
-    if (!inFile.is_open()) {
-        std::cerr << "Error: could not open " << inputFile << "\n";
-        return 1;
+    std::cout << "\nSample Records (first 5):\n";
+    int printed = 0;
+
+    for (const auto &block : db.getBlocks()) {  // assuming you have a getBlocks() method
+        for (size_t i = 0; i < block.getNumRecords() && printed < 5; ++i) {
+            const Record r = block.getRecord(i);
+            std::cout << "GameDate: " << r.GAME_DATE_EST
+                      << ", TeamID: " << r.TEAM_ID_home
+                      << ", PTS: " << r.PTS_home
+                      << ", FG%: " << r.FG_PCT_home
+                      << ", FT%: " << r.FT_PCT_home
+                      << ", FG3%: " << r.FG3_PCT_home
+                      << ", AST: " << r.AST_home
+                      << ", REB: " << r.REB_home
+                      << ", Win: " << r.HOME_TEAM_WINS
+                      << "\n";
+            ++printed;
+        }
+        if (printed >= 5) break;
     }
+    std::cout << "---------------------------------" << std::endl;
+}
 
-    std::string headerLine;
-    if (!std::getline(inFile, headerLine)) {
-        std::cerr << "Empty input file\n";
-        return 1;
-    }
+void task2(size_t blockSize, const std::string &dataFile) {
+    std::cout << "Task 2: Building B+ tree index on FT_PCT_home\n";
+    BPlusTree tree(blockSize);
 
-    // detect delimiter from header: prefer tab, else comma
-    char delim = (headerLine.find('\t') != std::string::npos) ? '\t' : ',';
-    std::cerr << "Detected delimiter: " << (delim == '\t' ? "\\t (TAB)" : ", (COMMA)") << "\n";
-
-    std::ofstream outFile(dbFile, std::ios::binary);
-    if (!outFile.is_open()) {
-        std::cerr << "Error: could not create " << dbFile << "\n";
-        return 1;
+    std::ifstream file(dataFile);
+    if (!file.is_open()) {
+        std::cerr << "Cannot open dataset file: " << dataFile << "\n";
+        return;
     }
 
     std::string line;
-    int total_records = 0;
-    while (std::getline(inFile, line)) {
-        if (trim(line).empty()) continue;
-        Record rec = parseLine(line, delim);
-        outFile.write(reinterpret_cast<const char*>(&rec), sizeof(Record));
-        total_records++;
-    }
+    if (!std::getline(file, line)) {
+        std::cerr << "Empty file or no header\n";
+        return;
+    } // skip header
 
-    inFile.close();
-    outFile.close();
+    uint32_t recordId = 0;
+    while (std::getline(file, line)) {
+        if (line.empty()) continue;
+        // parse 5th token (FT_PCT_home) using tab delimiter
+        std::stringstream ss(line);
+        std::string token;
+        int col = 0;
+        bool parsed = false;
+        double ft_pct = 0.0;
 
-    // statistics
-    int record_size = static_cast<int>(sizeof(Record));
-    int records_per_block = BLOCK_SIZE / record_size;
-    int total_blocks = (total_records + records_per_block - 1) / records_per_block;
-
-    std::cout << "===== Storage Statistics =====\n";
-    std::cout << "Record size: " << record_size << " bytes\n";
-    std::cout << "Total records: " << total_records << "\n";
-    std::cout << "Records per block: " << records_per_block << "\n";
-    std::cout << "Total blocks needed: " << total_blocks << "\n";
-
-    // read back first 5
-    std::ifstream dbInFile(dbFile, std::ios::binary);
-    if (dbInFile.is_open()) {
-        std::cout << "\nSample Records (first 5):\n";
-        Record r;
-        for (int i = 0; i < 5 && dbInFile.read(reinterpret_cast<char*>(&r), sizeof(Record)); ++i) {
-            std::cout << "GameDate: " << r.game_date
-                      << ", TeamID: " << r.team_id
-                      << ", PTS: " << r.pts_home
-                      << ", FG%: " << r.fg_pct_home
-                      << ", FT%: " << r.ft_pct_home
-                      << ", FG3%: " << r.fg3_pct_home
-                      << ", AST: " << r.ast_home
-                      << ", REB: " << r.reb_home
-                      << ", Win: " << r.home_team_wins
-                      << "\n";
+        while (std::getline(ss, token, '\t')) {
+            if (col == 4) { // 0-based: 0 date,1 team,2 pts,3 FG_PCT,4 FT_PCT
+                // remove leading/trailing spaces
+                while (!token.empty() && isspace((unsigned char)token.back())) token.pop_back();
+                size_t p = 0;
+                while (p < token.size() && isspace((unsigned char)token[p])) ++p;
+                std::string trimmed = token.substr(p);
+                try {
+                    ft_pct = trimmed.empty() ? 0.0 : std::stod(trimmed);
+                    parsed = true;
+                } catch (...) {
+                    parsed = false;
+                }
+                break;
+            }
+            ++col;
         }
-        dbInFile.close();
-    } else {
-        std::cerr << "Could not open binary DB file for reading\n";
+
+        if (!parsed) {
+            // skip malformed line
+            ++recordId; // keep recordId consistent with file rows
+            continue;
+        }
+
+        tree.insert(ft_pct, recordId);
+        ++recordId;
     }
+
+    // Save nodes to disk (bptree/node_X.txt)
+    tree.saveToDisk("bptree");
+
+    // Report statistics
+    std::cout << "\nTask 2 Report:\n";
+    std::cout << "---------------------------------\n";
+    std::cout << "Order (n) of B+ tree: " << tree.getOrder() << "\n";
+    std::cout << "Number of nodes: " << tree.getNumNodes() << "\n";
+    std::cout << "Number of levels: " << tree.getLevels() << "\n";
+
+    std::vector<double> rootKeys = tree.getKeysInRoot();
+    std::cout << "Keys in root node (" << rootKeys.size() << "):\n";
+    // print up to first 50 keys (avoid giant output)
+    size_t limit = std::min<size_t>(rootKeys.size(), 50);
+    for (size_t i = 0; i < limit; ++i) {
+        std::cout << rootKeys[i];
+        if (i + 1 < limit) std::cout << ", ";
+    }
+    if (rootKeys.size() > limit) std::cout << ", ...";
+    std::cout << "\n---------------------------------\n";
+}
+
+int main() {
+    size_t blockSize = 4096; // 4KB per block
+    Database db(blockSize);
+
+    db.loadFromFile("games.txt");
+    task1(db);
+    task2(blockSize, "games.txt");
 
     return 0;
 }
