@@ -116,7 +116,7 @@ int main() {
 
     db.loadFromFile("games.txt");
     task1(db);
-    task2(blockSize, "games.txt");
+    task2(db, blockSize);
 
     return 0;
 }
