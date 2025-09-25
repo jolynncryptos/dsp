@@ -60,80 +60,54 @@ void task1(Database &db) {
     std::cout << "---------------------------------" << std::endl;
 }
 
-void task2(size_t blockSize, const std::string &dataFile) {
-    std::cout << "Task 2: Building B+ tree index on FT_PCT_home\n";
-    BPlusTree tree(blockSize);
-
-    std::ifstream file(dataFile);
-    if (!file.is_open()) {
-        std::cerr << "Cannot open dataset file: " << dataFile << "\n";
+void task2(Database& db, size_t blockSize) {
+    std::vector<LeafEntry> pairs;
+    collect_pairs_ft_pct(db, pairs);
+    if (pairs.empty()) {
+        std::cout << "No data to index.\n";
         return;
     }
 
-    std::string line;
-    if (!std::getline(file, line)) {
-        std::cerr << "Empty file or no header\n";
-        return;
-    } // skip header
+    BPTree tree;
+    tree.compute_capacities(blockSize);
 
-    uint32_t recordId = 0;
-    while (std::getline(file, line)) {
-        if (line.empty()) continue;
-        // parse 5th token (FT_PCT_home) using tab delimiter
-        std::stringstream ss(line);
-        std::string token;
-        int col = 0;
-        bool parsed = false;
-        double ft_pct = 0.0;
 
-        while (std::getline(ss, token, '\t')) {
-            if (col == 4) { // 0-based: 0 date,1 team,2 pts,3 FG_PCT,4 FT_PCT
-                // remove leading/trailing spaces
-                while (!token.empty() && isspace((unsigned char)token.back())) token.pop_back();
-                size_t p = 0;
-                while (p < token.size() && isspace((unsigned char)token[p])) ++p;
-                std::string trimmed = token.substr(p);
-                try {
-                    ft_pct = trimmed.empty() ? 0.0 : std::stod(trimmed);
-                    parsed = true;
-                } catch (...) {
-                    parsed = false;
-                }
-                break;
-            }
-            ++col;
-        }
+    // Build leaves
+    auto leaves = build_leaves(tree, pairs);
 
-        if (!parsed) {
-            // skip malformed line
-            ++recordId; // keep recordId consistent with file rows
-            continue;
-        }
-
-        tree.insert(ft_pct, recordId);
-        ++recordId;
+    // Build internal levels bottom-up until a single root remains
+    std::vector<uint32_t> level = leaves;
+    uint32_t height = 1; 
+    while (level.size() > 1) {
+        level = build_internal_level(tree, level);
+        height++;
     }
+    tree.root_id = level.front();
+    tree.levels  = height;
 
-    // Save nodes to disk (bptree/node_X.txt)
-    tree.saveToDisk("bptree");
+    //Report
+    std::cout << "\nB+ Tree (key = FT_PCT_home)\n";
+    std::cout << "Order n: " << tree.internal_n << "\n";
+    std::cout << "Total nodes: " << tree.nodes.size() << "\n";
+    std::cout << "Levels: " << tree.levels << "\n";
 
-    // Report statistics
-    std::cout << "\nTask 2 Report:\n";
-    std::cout << "---------------------------------\n";
-    std::cout << "Order (n) of B+ tree: " << tree.getOrder() << "\n";
-    std::cout << "Number of nodes: " << tree.getNumNodes() << "\n";
-    std::cout << "Number of levels: " << tree.getLevels() << "\n";
-
-    std::vector<double> rootKeys = tree.getKeysInRoot();
-    std::cout << "Keys in root node (" << rootKeys.size() << "):\n";
-    // print up to first 50 keys (avoid giant output)
-    size_t limit = std::min<size_t>(rootKeys.size(), 50);
-    for (size_t i = 0; i < limit; ++i) {
-        std::cout << rootKeys[i];
-        if (i + 1 < limit) std::cout << ", ";
+    // Root keys
+    const BPTNode& root = tree.nodes[tree.root_id];
+    std::cout << std::fixed << std::setprecision(4);
+    std::cout << "Root keys: ";
+    if (root.header.is_leaf) {
+        for (size_t i = 0; i < root.leaf.size(); ++i) {
+            if (i) std::cout << ", ";
+            std::cout << root.leaf[i].key;
+            if (i >= 19 && i + 1 < root.leaf.size()) { std::cout << ", ..."; break; }
+        }
+    } else {
+        for (size_t i = 0; i < root.keys.size(); ++i) {
+            if (i) std::cout << ", ";
+            std::cout << root.keys[i];
+        }
     }
-    if (rootKeys.size() > limit) std::cout << ", ...";
-    std::cout << "\n---------------------------------\n";
+    std::cout << "\n";
 }
 
 int main() {
