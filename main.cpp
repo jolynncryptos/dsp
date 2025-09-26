@@ -7,6 +7,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <iomanip>
 
 
 // Task 1: Reporting statistics
@@ -45,12 +46,12 @@ void task1(Database &db) {
     std::cout << "---------------------------------" << std::endl;
 }
 
-void task2(Database& db, size_t blockSize) {
+BPTree task2(Database& db, size_t blockSize) {
     std::vector<LeafEntry> pairs;
     collect_pairs_ft_pct(db, pairs);
     if (pairs.empty()) {
         std::cout << "No data to index.\n";
-        return;
+        return BPTree{};
     }
 
     BPTree tree;
@@ -93,6 +94,8 @@ void task2(Database& db, size_t blockSize) {
         }
     }
     std::cout << "\n";
+
+    return tree;
 }
 
 int main() {
@@ -105,14 +108,31 @@ int main() {
     // task1(db);
     // std::cout << "\ndebug code3\n" << std::endl;
     
-    // show binary file works
+    // test to show binary file works
     Database db2(blockSize);
     db2.loadFromBinaryFile("games.bin");
     // std::cout << "\n[After reloading from binary]\n" << std::endl;
     task1(db2);
 
+    BPTree tree = task2(db, blockSize);
+    tree.saveToBinaryFile("bplustree.bin");
+    // std::cout << "\ndebug code4\n" << std::endl;
 
-    task2(db, blockSize);
+
+    // test to show binary file works 
+    BPTree loadedTree;
+    loadedTree.loadFromBinaryFile("bplustree.bin");
+    // std::cout << "\ndebug code5\n" << std::endl;
+    std::cout << "\n[Original Tree]\n";
+    std::cout << "Nodes: " << tree.nodes.size() 
+              << ", Root: " << tree.root_id 
+              << ", Levels: " << tree.levels << "\n";
+
+    std::cout << "[Loaded Tree]\n";
+    std::cout << "Nodes: " << loadedTree.nodes.size() 
+              << ", Root: " << loadedTree.root_id 
+              << ", Levels: " << loadedTree.levels << "\n";
+
 
     return 0;
 }

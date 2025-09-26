@@ -66,6 +66,10 @@ struct BPTree {
         nodes.push_back(std::move(n));
         return id;
     }
+
+    void saveToBinaryFile(const std::string& filename) const;
+    void loadFromBinaryFile(const std::string& filename);
+
 };
 
 void collect_pairs_ft_pct(const Database& db, std::vector<LeafEntry>& out_pairs);
