@@ -1,178 +1,98 @@
 #include "bplustree.h"
-#include <fstream>
+#include "databasefile.h"
+#include "block.h"
+#include "record.h"
+
 #include <algorithm>
 #include <iostream>
+#include <vector>
+#include <cstdint>
+#include <functional>
+#include <iomanip>
 
-BPlusTree::BPlusTree(size_t treeOrder) : order(treeOrder), rootId(0) {
-    nodes.push_back(Node{true, {}, {}, {}});  // root is initially a leaf
-}
-
-size_t BPlusTree::createNode(bool isLeaf) {
-    std::cout << "Creating node " << nodes.size() << " isLeaf=" << isLeaf << std::endl; //debug
-    nodes.push_back(Node{isLeaf, {}, {}, {}});
-    return nodes.size() - 1;
-}
-
-// not big enough
-// void BPlusTree::insert(double key, uint32_t recordId) {
-//     Node& root = nodes[rootId];
-
-//     if (root.isLeaf) {
-//         // Leaf insert
-//         auto pos = std::lower_bound(root.keys.begin(), root.keys.end(), key);
-//         size_t idx = static_cast<size_t>(pos - root.keys.begin());
-//         root.keys.insert(root.keys.begin() + static_cast<std::ptrdiff_t>(idx), key);
-//         root.values.insert(root.values.begin() + static_cast<std::ptrdiff_t>(idx), recordId);
-
-//         if (root.keys.size() >= order) {
-//             double promotedKey;
-//             size_t newNodeId;
-//             splitLeaf(rootId, promotedKey, newNodeId);
-
-//             size_t newRoot = createNode(false);
-//             nodes[newRoot].keys.push_back(promotedKey);
-//             nodes[newRoot].children.push_back(rootId);
-//             nodes[newRoot].children.push_back(newNodeId);
-//             rootId = newRoot;
-//         }
-//         return;
-//     }
-
-//     // TODO: Recursively insert into the correct child
-// }
-
-bool BPlusTree::insertRecursive(size_t nodeId, double key, uint32_t recordId, double &promotedKey, size_t &newNodeId) {
-    Node &node = nodes[nodeId];
-
-    if (node.isLeaf) {
-        // Insert key
-        auto pos = std::lower_bound(node.keys.begin(), node.keys.end(), key);
-        // size_t idx = pos - node.keys.begin();
-        auto idx = static_cast<std::size_t>(pos - node.keys.begin());
-
-        node.keys.insert(node.keys.begin() + static_cast<std::ptrdiff_t>(idx), key);
-        node.values.insert(node.values.begin() + static_cast<std::ptrdiff_t>(idx), recordId);
-
-        // Split if needed
-        if (node.keys.size() > order) { // strictly > max keys
-            splitLeaf(nodeId, promotedKey, newNodeId);
-            return true;
-        }
-        return false;
-    }
-
-    // Internal node
-    size_t childIdx = 0;
-    while (childIdx < node.keys.size() && key >= node.keys[childIdx])
-        ++childIdx;
-
-    double childPromotedKey;
-    size_t childNewNodeId;
-    bool childSplit = insertRecursive(node.children[childIdx], key, recordId, childPromotedKey, childNewNodeId);
-
-    if (childSplit) {
-        // Insert promoted key into current node
-        auto pos = std::lower_bound(node.keys.begin(), node.keys.end(), childPromotedKey);
-        // size_t idx = pos - node.keys.begin();
-        size_t idx = static_cast<std::size_t>(pos - node.keys.begin());
-
-        node.keys.insert(node.keys.begin() + static_cast<std::ptrdiff_t>(idx), childPromotedKey);
-        node.children.insert(node.children.begin() + static_cast<std::ptrdiff_t>(idx + 1), childNewNodeId);
-
-        if (node.keys.size() > order) { // split if more than max keys
-            splitInternal(nodeId, promotedKey, newNodeId);
-            return true;
+// read heap file and collect (key, RID) pairs
+void collect_pairs_ft_pct(const Database& db, std::vector<LeafEntry>& out_pairs) {
+    const auto& blocks = db.getBlocks();
+    uint32_t recno = 0;
+    for (const auto& blk : blocks) {
+        const size_t n = blk.getNumRecords();
+        for (size_t i = 0; i < n; ++i) {
+            const Record& r = blk.getRecord(i);
+            out_pairs.push_back(LeafEntry{ static_cast<float>(r.FT_PCT_home), recno });
+            recno++;
         }
     }
 
-    return false;
+    // then sort
+    std::stable_sort(out_pairs.begin(), out_pairs.end(),
+        [](const LeafEntry& a, const LeafEntry& b){
+            if (a.key != b.key) return a.key < b.key;
+            return a.recno < b.recno;
+        });
 }
 
-void BPlusTree::insert(double key, uint32_t recordId) {
-    double promotedKey;
-    size_t newNodeId;
-    bool split = insertRecursive(rootId, key, recordId, promotedKey, newNodeId);
+// bulk-load leaves
+std::vector<uint32_t> build_leaves(BPTree& tree, const std::vector<LeafEntry>& pairs) {
+    std::vector<uint32_t> leaf_ids;
+    size_t i = 0, N = pairs.size();
 
-    if (split) {
-        // Root was split → create new root
-        size_t newRoot = createNode(false);
-        nodes[newRoot].keys.push_back(promotedKey);
-        nodes[newRoot].children.push_back(rootId);
-        nodes[newRoot].children.push_back(newNodeId);
-        rootId = newRoot;
+    while (i < N) {
+        const size_t take = std::min<size_t>(tree.leaf_capacity, N - i);
+
+        uint32_t id = tree.new_node(true);
+        BPTNode& leaf = tree.nodes[id];
+
+        leaf.leaf.insert(leaf.leaf.end(), pairs.begin() + static_cast<long>(i), pairs.begin() + static_cast<long>(i + take));
+        leaf.header.key_count = static_cast<uint16_t>(take);
+
+        // link previous leaf
+        if (!leaf_ids.empty()) tree.nodes[leaf_ids.back()].header.next_leaf_id = id;
+
+        leaf_ids.push_back(id);
+        i += take;
     }
+    return leaf_ids;
 }
 
-
-void BPlusTree::splitLeaf(size_t leafId, double& promotedKey, size_t& newNodeId) {
-    Node& leaf = nodes[leafId];
-    size_t mid = leaf.keys.size() / 2;
-
-    newNodeId = createNode(true);
-    Node& right = nodes[newNodeId];
-
-    right.keys.assign(leaf.keys.begin() + static_cast<std::ptrdiff_t>(mid), leaf.keys.end());
-    right.values.assign(leaf.values.begin() + static_cast<std::ptrdiff_t>(mid), leaf.values.end());
-
-    leaf.keys.erase(leaf.keys.begin() + static_cast<std::ptrdiff_t>(mid), leaf.keys.end());
-    leaf.values.erase(leaf.values.begin() + static_cast<std::ptrdiff_t>(mid), leaf.values.end());
-
-    promotedKey = right.keys.front();
+// Return the minimal key (foor using it as a separator)
+static float min_key_of_node(const BPTree& tree, uint32_t nid) {
+    const BPTNode& c = tree.nodes[nid];
+    if (c.header.is_leaf) return c.leaf.front().key;
+    else return min_key_of_node(tree, c.pointers.front());
 }
 
-void BPlusTree::splitInternal(size_t nodeId, double& promotedKey, size_t& newNodeId) {
-    Node& node = nodes[nodeId];
-    size_t mid = node.keys.size() / 2;
+// Build one internal level above
+std::vector<uint32_t> build_internal_level(BPTree& tree, const std::vector<uint32_t>& child_ids) {
+    std::vector<uint32_t> level_ids;
+    if (child_ids.empty()) return level_ids;
 
-    newNodeId = createNode(false);
-    Node& right = nodes[newNodeId];
+    const size_t fanout = tree.internal_n;
+    size_t i = 0, N = child_ids.size();
 
-    promotedKey = node.keys[mid];
+    while (i < N) {
+        const size_t take = std::min<size_t>(fanout, N - i);
 
-    right.keys.assign(node.keys.begin() + static_cast<std::ptrdiff_t>(mid + 1), node.keys.end());
-    right.children.assign(node.children.begin() + static_cast<std::ptrdiff_t>(mid + 1), node.children.end());
+        uint32_t id = tree.new_node(false);
+        BPTNode& node = tree.nodes[id];
 
-    node.keys.erase(node.keys.begin() + static_cast<std::ptrdiff_t>(mid), node.keys.end());
-    node.children.erase(node.children.begin() + static_cast<std::ptrdiff_t>(mid + 1), node.children.end());
-}
+        node.pointers.reserve(take);
+        for (size_t j = 0; j < take; ++j) {
+            const uint32_t cid = child_ids[i + j];
+            node.pointers.push_back(cid);
+            tree.nodes[cid].header.parent_id = id;
+        }
 
-int BPlusTree::getLevels() const {
-    int levels = 0;
-    size_t cur = rootId;
-    while (true) {
-        levels++;
-        if (nodes[cur].isLeaf) break;
-        if (nodes[cur].children.empty()) break;
-        cur = nodes[cur].children.front();
+        // Separator keys are min of each right child
+        if (take) node.keys.reserve(take - 1);
+        else node.keys.reserve(0);
+
+        for (size_t j = 1; j < node.pointers.size(); ++j) {
+            node.keys.push_back(min_key_of_node(tree, node.pointers[j]));
+        }
+        node.header.key_count = static_cast<uint16_t>(node.keys.size());
+
+        level_ids.push_back(id);
+        i += take;
     }
-    return levels;
+    return level_ids;
 }
-
-std::vector<double> BPlusTree::getKeysInRoot() const {
-    return nodes[rootId].keys;
-}
-
-void BPlusTree::saveToDisk(const std::string& filename) const {
-    std::ofstream out(filename, std::ios::binary);
-    if (!out) return;
-
-    for (const auto& node : nodes) {
-        out.write(reinterpret_cast<const char*>(&node.isLeaf), sizeof(node.isLeaf));
-
-        size_t keyCount = node.keys.size();
-        out.write(reinterpret_cast<const char*>(&keyCount), sizeof(keyCount));
-        out.write(reinterpret_cast<const char*>(node.keys.data()), 
-                  static_cast<std::streamsize>(keyCount * sizeof(double)));
-
-        size_t valueCount = node.values.size();
-        out.write(reinterpret_cast<const char*>(&valueCount), sizeof(valueCount));
-        out.write(reinterpret_cast<const char*>(node.values.data()), 
-                  static_cast<std::streamsize>(valueCount * sizeof(uint32_t)));
-
-        size_t childCount = node.children.size();
-        out.write(reinterpret_cast<const char*>(&childCount), sizeof(childCount));
-        out.write(reinterpret_cast<const char*>(node.children.data()), 
-                  static_cast<std::streamsize>(childCount * sizeof(size_t)));
-    }
-}
-

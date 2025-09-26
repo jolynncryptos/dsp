@@ -15,6 +15,8 @@ private:
 public:
     explicit Database(size_t blockSize);
     void loadFromFile(const std::string &filename);
+    void saveToBinaryFile(const std::string &filename) const;
+    void loadFromBinaryFile(const std::string &filename);
 
     // getters for task 1
     size_t getRecordSize() const;
@@ -26,5 +28,5 @@ public:
     }
 };
 
-#endif // DATABASEFILE_H
+#endif
 
