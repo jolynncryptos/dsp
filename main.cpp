@@ -43,10 +43,14 @@ void task1(Database &db) {
         if (printed >= 5) break;
     }
     std::cout << "---------------------------------" << std::endl;
+    std::cout << "\n" << std::endl;
+
 }
 
 
 BPTree task2(Database& db, size_t blockSize) {
+    std::cout << "Task 2 Report:";
+    std::cout << "\n";
     std::vector<LeafEntry> pairs;
     collect_pairs_ft_pct(db, pairs);
     if (pairs.empty()) {
