@@ -63,12 +63,12 @@ static std::string readString(std::ifstream& in) {
 
 
 
-// Save blocks to binary file
+// store data in binary file
 void Database::saveToBinaryFile(const std::string &dbFile) const {
     std::ofstream out(dbFile, std::ios::binary);
     if (!out) throw std::runtime_error("Cannot open file for writing: " + dbFile);
 
-    // Write metadata
+    // write metadata
     out.write(reinterpret_cast<const char*>(&blockSize), sizeof(blockSize));
     out.write(reinterpret_cast<const char*>(&recordSize), sizeof(recordSize));
     out.write(reinterpret_cast<const char*>(&totalRecords), sizeof(totalRecords));
@@ -99,7 +99,7 @@ void Database::saveToBinaryFile(const std::string &dbFile) const {
 }
 
 
-// Load blocks from binary file (test if the binary file works)
+// load blocks from binary file to test to see if binary file works
 void Database::loadFromBinaryFile(const std::string &dbFile) {
     std::ifstream in(dbFile, std::ios::binary);
     if (!in) throw std::runtime_error("Cannot open file for reading: " + dbFile);
@@ -107,7 +107,7 @@ void Database::loadFromBinaryFile(const std::string &dbFile) {
     blocks.clear();
     totalRecords = 0;
 
-    // Read metadata
+    // read metadata
     in.read(reinterpret_cast<char*>(&blockSize), sizeof(blockSize));
     in.read(reinterpret_cast<char*>(&recordSize), sizeof(recordSize));
     in.read(reinterpret_cast<char*>(&totalRecords), sizeof(totalRecords));

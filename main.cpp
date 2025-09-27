@@ -10,7 +10,6 @@
 #include <iomanip>
 
 
-// Task 1: Reporting statistics
 void task1(Database &db) {
     const std::string inputFile = "games.txt";
     const std::string dbFile = "games_db.bin"; //whERE IS THE DBFILEEEEEEEE
@@ -46,6 +45,7 @@ void task1(Database &db) {
     std::cout << "---------------------------------" << std::endl;
 }
 
+
 BPTree task2(Database& db, size_t blockSize) {
     std::vector<LeafEntry> pairs;
     collect_pairs_ft_pct(db, pairs);
@@ -58,10 +58,10 @@ BPTree task2(Database& db, size_t blockSize) {
     tree.compute_capacities(blockSize);
 
 
-    // Build leaves
+    // build leaves
     auto leaves = build_leaves(tree, pairs);
 
-    // Build internal levels bottom-up until a single root remains
+    // build internal levels bottom-up until a single root remains
     std::vector<uint32_t> level = leaves;
     uint32_t height = 1; 
     while (level.size() > 1) {
@@ -71,13 +71,13 @@ BPTree task2(Database& db, size_t blockSize) {
     tree.root_id = level.front();
     tree.levels  = height;
 
-    //Report
+    //report
     std::cout << "\nB+ Tree (key = FT_PCT_home)\n";
     std::cout << "Order n: " << tree.internal_n << "\n";
     std::cout << "Total nodes: " << tree.nodes.size() << "\n";
     std::cout << "Levels: " << tree.levels << "\n";
 
-    // Root keys
+    // root keys
     const BPTNode& root = tree.nodes[tree.root_id];
     std::cout << std::fixed << std::setprecision(4);
     std::cout << "Root keys: ";

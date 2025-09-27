@@ -18,7 +18,6 @@ public:
     void saveToBinaryFile(const std::string &filename) const;
     void loadFromBinaryFile(const std::string &filename);
 
-    // getters for task 1
     size_t getRecordSize() const;
     size_t getTotalRecords() const;
     size_t getRecordsPerBlock() const; // average records per block
