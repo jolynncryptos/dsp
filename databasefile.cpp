@@ -47,100 +47,118 @@ void Database::loadFromFile(const std::string &filename) {
     }
 }
 
-static void writeString(std::ofstream& out, const std::string& s) {
-    size_t len = s.size();
-    out.write(reinterpret_cast<const char*>(&len), sizeof(len));
-    out.write(s.data(), static_cast<std::streamsize>(len));
-}
 
-static std::string readString(std::ifstream& in) {
-    size_t len;
-    in.read(reinterpret_cast<char*>(&len), sizeof(len));
-    std::string s(len, '\0');
-    in.read(&s[0], static_cast<std::streamsize>(len));
-    return s;
-}
+// store data in dummy binary file 
+void Database::saveToBinaryFile(const std::string &filename) const {
+    std::ofstream out(filename); 
+    if (!out) {
+        std::cerr << "Error opening file for writing: " << filename << "\n";
+        return;
+    }
 
+    // write metadata as text
+    out << blockSize << "\n";
+    out << recordSize << "\n"; 
+    out << totalRecords << "\n";
+    out << blocks.size() << "\n";
 
+    // write blocks
+    for (const auto& block : blocks) {
+        out << block.getNumRecords() << "\n";
 
-// store data in binary file
-void Database::saveToBinaryFile(const std::string &dbFile) const {
-    std::ofstream out(dbFile, std::ios::binary);
-    if (!out) throw std::runtime_error("Cannot open file for writing: " + dbFile);
+        for (size_t i = 0; i < block.getNumRecords(); ++i) {
+            const Record& r = block.getRecord(i);
 
-    // write metadata
-    out.write(reinterpret_cast<const char*>(&blockSize), sizeof(blockSize));
-    out.write(reinterpret_cast<const char*>(&recordSize), sizeof(recordSize));
-    out.write(reinterpret_cast<const char*>(&totalRecords), sizeof(totalRecords));
-
-    size_t numBlocks = blocks.size();
-    out.write(reinterpret_cast<const char*>(&numBlocks), sizeof(numBlocks));
-
-    for (const auto& blk : blocks) {
-        size_t numRecords = blk.getNumRecords();
-        out.write(reinterpret_cast<const char*>(&numRecords), sizeof(numRecords));
-
-        for (size_t i = 0; i < numRecords; i++) {
-            const Record& rec = blk.getRecord(i);
-
-            // serialise 
-            writeString(out, rec.GAME_DATE_EST);
-
-            out.write(reinterpret_cast<const char*>(&rec.TEAM_ID_home), sizeof(rec.TEAM_ID_home));
-            out.write(reinterpret_cast<const char*>(&rec.PTS_home), sizeof(rec.PTS_home));
-            out.write(reinterpret_cast<const char*>(&rec.FG_PCT_home), sizeof(rec.FG_PCT_home));
-            out.write(reinterpret_cast<const char*>(&rec.FT_PCT_home), sizeof(rec.FT_PCT_home));
-            out.write(reinterpret_cast<const char*>(&rec.FG3_PCT_home), sizeof(rec.FG3_PCT_home));
-            out.write(reinterpret_cast<const char*>(&rec.AST_home), sizeof(rec.AST_home));
-            out.write(reinterpret_cast<const char*>(&rec.REB_home), sizeof(rec.REB_home));
-            out.write(reinterpret_cast<const char*>(&rec.HOME_TEAM_WINS), sizeof(rec.HOME_TEAM_WINS));
+            // write all fields separated by |
+            out << r.GAME_DATE_EST << "|"
+                << r.TEAM_ID_home << "|"
+                << r.PTS_home << "|"
+                << r.FG_PCT_home << "|"
+                << r.FT_PCT_home << "|"
+                << r.FG3_PCT_home << "|"
+                << r.AST_home << "|"
+                << r.REB_home << "|"
+                << r.HOME_TEAM_WINS << "\n";
         }
     }
 }
 
-
-// load blocks from binary file to test to see if binary file works
+// load binary file to test that it is working
 void Database::loadFromBinaryFile(const std::string &dbFile) {
-    std::ifstream in(dbFile, std::ios::binary);
-    if (!in) throw std::runtime_error("Cannot open file for reading: " + dbFile);
+    std::ifstream in(dbFile);  
+    if (!in) {
+        std::cerr << "Error opening file for reading: " << dbFile << "\n";
+        return;
+    }
+
+    // read metadata 
+    in >> blockSize >> recordSize >> totalRecords;
+
+    size_t numBlocks = 0;
+    in >> numBlocks;
 
     blocks.clear();
-    totalRecords = 0;
+    blocks.reserve(numBlocks);
 
-    // read metadata
-    in.read(reinterpret_cast<char*>(&blockSize), sizeof(blockSize));
-    in.read(reinterpret_cast<char*>(&recordSize), sizeof(recordSize));
-    in.read(reinterpret_cast<char*>(&totalRecords), sizeof(totalRecords));
+    std::string line;
+    std::getline(in, line); 
 
-    size_t numBlocks;
-    in.read(reinterpret_cast<char*>(&numBlocks), sizeof(numBlocks));
+    for (size_t b = 0; b < numBlocks; ++b) {
+        size_t numRecs = 0;
+        in >> numRecs;
+        std::getline(in, line); 
 
-    for (size_t b = 0; b < numBlocks; b++) {
-        Block blk(blockSize);
+        Block block(blockSize);
+        for (size_t i = 0; i < numRecs; ++i) {
+            std::getline(in, line);
+            if (line.empty()) continue;
 
-        size_t numRecords;
-        in.read(reinterpret_cast<char*>(&numRecords), sizeof(numRecords));
+            Record r;
+            
+            size_t pos = 0;
+            size_t nextPos = 0;
+            
+            // parse data
+            nextPos = line.find('|', pos);
+            r.GAME_DATE_EST = line.substr(pos, nextPos - pos);
+            pos = nextPos + 1;
 
-        for (size_t i = 0; i < numRecords; i++) {
-            Record rec;
+            nextPos = line.find('|', pos);
+            r.TEAM_ID_home = std::stoi(line.substr(pos, nextPos - pos));
+            pos = nextPos + 1;
 
-            // deserialise
-            rec.GAME_DATE_EST = readString(in);
+            nextPos = line.find('|', pos);
+            r.PTS_home = std::stoi(line.substr(pos, nextPos - pos));
+            pos = nextPos + 1;
 
-            in.read(reinterpret_cast<char*>(&rec.TEAM_ID_home), sizeof(rec.TEAM_ID_home));
-            in.read(reinterpret_cast<char*>(&rec.PTS_home), sizeof(rec.PTS_home));
-            in.read(reinterpret_cast<char*>(&rec.FG_PCT_home), sizeof(rec.FG_PCT_home));
-            in.read(reinterpret_cast<char*>(&rec.FT_PCT_home), sizeof(rec.FT_PCT_home));
-            in.read(reinterpret_cast<char*>(&rec.FG3_PCT_home), sizeof(rec.FG3_PCT_home));
-            in.read(reinterpret_cast<char*>(&rec.AST_home), sizeof(rec.AST_home));
-            in.read(reinterpret_cast<char*>(&rec.REB_home), sizeof(rec.REB_home));
-            in.read(reinterpret_cast<char*>(&rec.HOME_TEAM_WINS), sizeof(rec.HOME_TEAM_WINS));
+            nextPos = line.find('|', pos);
+            r.FG_PCT_home = std::stof(line.substr(pos, nextPos - pos));
+            pos = nextPos + 1;
 
-            blk.addRecord(rec);
+            nextPos = line.find('|', pos);
+            r.FT_PCT_home = std::stof(line.substr(pos, nextPos - pos));
+            pos = nextPos + 1;
+
+            nextPos = line.find('|', pos);
+            r.FG3_PCT_home = std::stof(line.substr(pos, nextPos - pos));
+            pos = nextPos + 1;
+
+            nextPos = line.find('|', pos);
+            r.AST_home = std::stoi(line.substr(pos, nextPos - pos));
+            pos = nextPos + 1;
+
+            nextPos = line.find('|', pos);
+            r.REB_home = std::stoi(line.substr(pos, nextPos - pos));
+            pos = nextPos + 1;
+
+            r.HOME_TEAM_WINS = std::stoi(line.substr(pos));
+
+            block.addRecord(r);
         }
-        blocks.push_back(blk);
+        blocks.push_back(block);
     }
 }
+
 
 size_t Database::getRecordSize() const {
     return recordSize;
