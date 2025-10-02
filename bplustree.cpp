@@ -99,71 +99,143 @@ std::vector<uint32_t> build_internal_level(BPTree& tree, const std::vector<uint3
     return level_ids;
 }
 
-
 void BPTree::saveToBinaryFile(const std::string& filename) const {
-    std::ofstream out(filename, std::ios::binary);
+    std::ofstream out(filename);  
     if (!out) throw std::runtime_error("Cannot open file for writing");
 
-    // write metadata
-    out.write(reinterpret_cast<const char*>(&internal_n), sizeof(internal_n));
-    out.write(reinterpret_cast<const char*>(&leaf_capacity), sizeof(leaf_capacity));
-    out.write(reinterpret_cast<const char*>(&root_id), sizeof(root_id));
-    out.write(reinterpret_cast<const char*>(&levels), sizeof(levels));
-
-    uint32_t node_count = static_cast<uint32_t>(nodes.size());
-    out.write(reinterpret_cast<const char*>(&node_count), sizeof(node_count));
+    // write metadata as text
+    out << internal_n << "\n";
+    out << leaf_capacity << "\n";
+    out << root_id << "\n";
+    out << levels << "\n";
+    out << nodes.size() << "\n";
 
     // write nodes
     for (const auto& node : nodes) {
-        out.write(reinterpret_cast<const char*>(&node.header), sizeof(node.header));
+        // write header fields
+        out << static_cast<int>(node.header.is_leaf) << "|"
+            << node.header.key_count << "|"
+            << node.header.parent_id << "|"
+            << node.header.next_leaf_id << "\n";
 
-        // pointers
-        uint32_t psize = static_cast<uint32_t>(node.pointers.size());
-        out.write(reinterpret_cast<const char*>(&psize), sizeof(psize));
-        out.write(reinterpret_cast<const char*>(node.pointers.data()), psize * sizeof(uint32_t));
+        // write pointers
+        out << node.pointers.size();
+        for (uint32_t ptr : node.pointers) {
+            out << "|" << ptr;
+        }
+        out << "\n";
 
-        // keys
-        uint32_t ksize = static_cast<uint32_t>(node.keys.size());
-        out.write(reinterpret_cast<const char*>(&ksize), sizeof(ksize));
-        out.write(reinterpret_cast<const char*>(node.keys.data()), ksize * sizeof(float));
+        // write keys
+        out << node.keys.size();
+        for (float key : node.keys) {
+            out << "|" << std::fixed << std::setprecision(6) << key;
+        }
+        out << "\n";
 
-        // leaf entries
-        uint32_t lsize = static_cast<uint32_t>(node.leaf.size());
-        out.write(reinterpret_cast<const char*>(&lsize), sizeof(lsize));
-        out.write(reinterpret_cast<const char*>(node.leaf.data()), lsize * sizeof(LeafEntry));
+        // write leaf entries
+        out << node.leaf.size();
+        for (const LeafEntry& entry : node.leaf) {
+            out << "|" << std::fixed << std::setprecision(6) << entry.key << ":" << entry.recno;
+        }
+        out << "\n";
     }
 }
 
 void BPTree::loadFromBinaryFile(const std::string& filename) {
-    std::ifstream in(filename, std::ios::binary);
+    std::ifstream in(filename);  
     if (!in) throw std::runtime_error("Cannot open file for reading");
 
-    // read metadata
-    in.read(reinterpret_cast<char*>(&internal_n), sizeof(internal_n));
-    in.read(reinterpret_cast<char*>(&leaf_capacity), sizeof(leaf_capacity));
-    in.read(reinterpret_cast<char*>(&root_id), sizeof(root_id));
-    in.read(reinterpret_cast<char*>(&levels), sizeof(levels));
-
-    uint32_t node_count = 0;
-    in.read(reinterpret_cast<char*>(&node_count), sizeof(node_count));
+    // read metadata as text
+    uint32_t node_count;
+    in >> internal_n >> leaf_capacity >> root_id >> levels >> node_count;
     nodes.resize(node_count);
+
+    std::string line;
+    std::getline(in, line); 
 
     // read nodes
     for (auto& node : nodes) {
-        in.read(reinterpret_cast<char*>(&node.header), sizeof(node.header));
+        // read header line
+        std::getline(in, line);
+        size_t pos = 0, nextPos = 0;
 
-        uint32_t psize = 0, ksize = 0, lsize = 0;
+        // parse header fields
+        nextPos = line.find('|', pos);
+        node.header.is_leaf = (std::stoi(line.substr(pos, nextPos - pos)) == 1);
+        pos = nextPos + 1;
 
-        in.read(reinterpret_cast<char*>(&psize), sizeof(psize));
-        node.pointers.resize(psize);
-        in.read(reinterpret_cast<char*>(node.pointers.data()), psize * sizeof(uint32_t));
+        nextPos = line.find('|', pos);
+        node.header.key_count = static_cast<uint16_t>(std::stoi(line.substr(pos, nextPos - pos)));
+        pos = nextPos + 1;
 
-        in.read(reinterpret_cast<char*>(&ksize), sizeof(ksize));
-        node.keys.resize(ksize);
-        in.read(reinterpret_cast<char*>(node.keys.data()), ksize * sizeof(float));
+        nextPos = line.find('|', pos);
+        node.header.parent_id = static_cast<uint32_t>(std::stoul(line.substr(pos, nextPos - pos)));
+        pos = nextPos + 1;
 
-        in.read(reinterpret_cast<char*>(&lsize), sizeof(lsize));
-        node.leaf.resize(lsize);
-        in.read(reinterpret_cast<char*>(node.leaf.data()), lsize * sizeof(LeafEntry));
+        node.header.next_leaf_id = static_cast<uint32_t>(std::stoul(line.substr(pos)));
+
+        // read pointers line
+        std::getline(in, line);
+        pos = 0;
+        nextPos = line.find('|', pos);
+        uint32_t psize = static_cast<uint32_t>(std::stoul(line.substr(pos, nextPos - pos)));
+        node.pointers.clear();
+        node.pointers.reserve(psize);
+
+        for (uint32_t i = 0; i < psize; ++i) {
+            if (nextPos == std::string::npos) break;
+            pos = nextPos + 1;
+            nextPos = line.find('|', pos);
+            if (nextPos == std::string::npos) {
+                node.pointers.push_back(static_cast<uint32_t>(std::stoul(line.substr(pos))));
+            } else {
+                node.pointers.push_back(static_cast<uint32_t>(std::stoul(line.substr(pos, nextPos - pos))));
+            }
+        }
+
+        std::getline(in, line);
+        pos = 0;
+        nextPos = line.find('|', pos);
+        uint32_t ksize = static_cast<uint32_t>(std::stoul(line.substr(pos, nextPos - pos)));
+        node.keys.clear();
+        node.keys.reserve(ksize);
+
+        for (uint32_t i = 0; i < ksize; ++i) {
+            if (nextPos == std::string::npos) break;
+            pos = nextPos + 1;
+            nextPos = line.find('|', pos);
+            if (nextPos == std::string::npos) {
+                node.keys.push_back(std::stof(line.substr(pos)));
+            } else {
+                node.keys.push_back(std::stof(line.substr(pos, nextPos - pos)));
+            }
+        }
+
+        std::getline(in, line);
+        pos = 0;
+        nextPos = line.find('|', pos);
+        uint32_t lsize = static_cast<uint32_t>(std::stoul(line.substr(pos, nextPos - pos)));
+        node.leaf.clear();
+        node.leaf.reserve(lsize);
+
+        for (uint32_t i = 0; i < lsize; ++i) {
+            if (nextPos == std::string::npos) break;
+            pos = nextPos + 1;
+            nextPos = line.find('|', pos);
+            
+            std::string entry_str;
+            if (nextPos == std::string::npos) {
+                entry_str = line.substr(pos);
+            } else {
+                entry_str = line.substr(pos, nextPos - pos);
+            }
+
+            size_t colon_pos = entry_str.find(':');
+            if (colon_pos != std::string::npos) {
+                float key = std::stof(entry_str.substr(0, colon_pos));
+                uint32_t recno = static_cast<uint32_t>(std::stoul(entry_str.substr(colon_pos + 1)));
+                node.leaf.push_back(LeafEntry{key, recno});
+            }
+        }
     }
 }

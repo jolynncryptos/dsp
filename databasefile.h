@@ -16,7 +16,7 @@ public:
     explicit Database(size_t blockSize);
     void loadFromFile(const std::string &filename);
     void saveToBinaryFile(const std::string &filename) const;
-    void loadFromBinaryFile(const std::string &filename);
+    void loadFromBinaryFile(const std::string &dbFile);
 
     size_t getRecordSize() const;
     size_t getTotalRecords() const;
