@@ -1,3 +1,7 @@
+// code of databasefile.cpp but storing the data in binary file instead of dummy binary file.
+
+
+
 #include "databasefile.h"
 #include "record.h"
 #include <fstream>
