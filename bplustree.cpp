@@ -282,21 +282,6 @@ bool BPTree::isNodeUnderflow(uint32_t node_id) {
     return node.isUnderflow(min_keys);
 }
 
-void BPTree::handleUnderflow(uint32_t node_id) {
-    // Simplified underflow handling - in a full implementation,
-    // this would merge with siblings or redistribute keys
-    // For this task, we'll just leave the tree as-is
-    // since we're mainly interested in statistics
-}
-
-void BPTree::deleteFromDatabase(Database& db, const std::vector<LeafEntry>& to_delete) {
-    // This is a simplified implementation that tracks which records would be deleted
-    // In a real system, you would actually remove records from blocks
-    
-    // For now, we'll just count the deletions without modifying the actual database
-    // since the Database class doesn't have a delete method
-}
-
 BPTree::DeletionStats BPTree::deleteHighFTPCT(Database& db, float threshold) {
     DeletionStats stats;
     auto start_time = std::chrono::high_resolution_clock::now();
