@@ -6,7 +6,6 @@
 #include <vector>
 #include <iomanip>
 #include <string>
-#include <chrono>
 
 class Database;
 struct Record;
@@ -22,10 +21,25 @@ struct NodeHeader {
 };
 #pragma pack(pop)
 
+// RID - Record ID: block number, slot number inside the block
+// 4B + 4B = 8B
+struct RID {
+    uint32_t block; //4B
+    uint32_t slot; //4B
+    // define comparison operators
+    bool operator<(const RID& o) const {
+        return block < o.block || (block == o.block && slot < o.slot); // compare based on blocks, then slots
+    }
+    bool operator==(const RID& o) const {
+        return block == o.block && slot == o.slot; // 2 RID equal if the block number AND the slot number is the same
+    }
+};
+
 // (key, RID) pairs
+// 4B + 8B = 12B
 struct LeafEntry {
-    float key;
-    uint32_t recno; 
+    float key; // chosn attribute, FT_PCT_home values
+    RID   rid; // (block, slot)
 };
 
 // node representation
@@ -34,7 +48,7 @@ struct BPTNode {
     std::vector<uint32_t> pointers; // child node ids
     std::vector<float> keys; // separator keys
     std::vector<LeafEntry> leaf;
-    
+
     bool isUnderflow(size_t min_keys) const {
         if (header.is_leaf) {
             return leaf.size() < min_keys;
@@ -64,12 +78,19 @@ struct BPTree {
     };
 
     void compute_capacities(size_t blockSizeBytes) {
-        const size_t node_header_size = sizeof(NodeHeader);
-        size_t kmax = (blockSizeBytes - node_header_size - sizeof(uint32_t)) / (sizeof(float) + sizeof(uint32_t));
+        const size_t headerSize = sizeof(NodeHeader);
+        // internal node:
+        // (n key) + (n+1 pointer) + headerSize
+        // -4 is the +1 pointer's size
+        // key => 4B, pointer => 4B, so every (key, pointer) is 8B
+        size_t kmax = (blockSizeBytes - headerSize - 4) / 8; 
         if (kmax < 1) kmax = 1;
         internal_n = static_cast<uint32_t>(kmax + 1);
 
-        size_t mmax = (blockSizeBytes - node_header_size) / sizeof(LeafEntry);
+        // leaf node:
+        // m entries, each contains (key, RID)
+        // the next leaf pointer is already in the header
+        size_t mmax = (blockSizeBytes - headerSize) / sizeof(LeafEntry);
         if (mmax < 1) mmax = 1;
         leaf_capacity = static_cast<uint32_t>(mmax);
     }
@@ -103,7 +124,9 @@ private:
     void updateInternalKeys(uint32_t node_id);
     float findMinKeyInSubtree(uint32_t node_id);
     float findActualMinKey(uint32_t node_id);
+
 };
+
 
 void collect_pairs_ft_pct(const Database& db, std::vector<LeafEntry>& out_pairs);
 std::vector<uint32_t> build_leaves(BPTree& tree, const std::vector<LeafEntry>& pairs);
