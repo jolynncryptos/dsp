@@ -18,28 +18,29 @@
 // read heap file and collect (key, RID) pairs
 void collect_pairs_ft_pct(const Database& db, std::vector<LeafEntry>& out_pairs) {
     const auto& blocks = db.getBlocks();
-    uint32_t recno = 0;
-    for (const auto& blk : blocks) {
+
+    for (size_t b = 0; b < blocks.size(); ++b) {
+        const Block& blk = blocks[b];
         const size_t n = blk.getNumRecords();
         for (size_t i = 0; i < n; ++i) {
             const Record& r = blk.getRecord(i);
-            out_pairs.push_back(LeafEntry{ static_cast<float>(r.FT_PCT_home), recno });
-            recno++;
+            RID rid{ static_cast<uint32_t>(b), static_cast<uint32_t>(i) };
+            out_pairs.push_back(LeafEntry{ static_cast<float>(r.FT_PCT_home), rid });
         }
     }
 
     // then sort
-    std::stable_sort(out_pairs.begin(), out_pairs.end(),
-        [](const LeafEntry& a, const LeafEntry& b){
+    std::stable_sort(out_pairs.begin(), out_pairs.end(), [](const LeafEntry& a, const LeafEntry& b){
             if (a.key != b.key) return a.key < b.key;
-            return a.recno < b.recno;
+            return a.rid < b.rid;
         });
 }
 
 // bulk-load leaves
 std::vector<uint32_t> build_leaves(BPTree& tree, const std::vector<LeafEntry>& pairs) {
     std::vector<uint32_t> leaf_ids;
-    size_t i = 0, N = pairs.size();
+    size_t i = 0;
+    size_t N = pairs.size();
 
     while (i < N) {
         const size_t take = std::min<size_t>(tree.leaf_capacity, N - i);
@@ -59,14 +60,14 @@ std::vector<uint32_t> build_leaves(BPTree& tree, const std::vector<LeafEntry>& p
     return leaf_ids;
 }
 
-// Return the minimal key (foor using it as a separator)
+// return the minimal key (for using it as a separator)
 static float min_key_of_node(const BPTree& tree, uint32_t nid) {
     const BPTNode& c = tree.nodes[nid];
     if (c.header.is_leaf) return c.leaf.front().key;
     else return min_key_of_node(tree, c.pointers.front());
 }
 
-// Build one internal level above
+// build internal level above
 std::vector<uint32_t> build_internal_level(BPTree& tree, const std::vector<uint32_t>& child_ids) {
     std::vector<uint32_t> level_ids;
     if (child_ids.empty()) return level_ids;
@@ -87,7 +88,7 @@ std::vector<uint32_t> build_internal_level(BPTree& tree, const std::vector<uint3
             tree.nodes[cid].header.parent_id = id;
         }
 
-        // Separator keys are min of each right child
+        // separator keys are the min of each right child
         if (take) node.keys.reserve(take - 1);
         else node.keys.reserve(0);
 
@@ -137,8 +138,9 @@ void BPTree::saveToBinaryFile(const std::string& filename) const {
 
         // write leaf entries
         out << node.leaf.size();
-        for (const LeafEntry& entry : node.leaf) {
-            out << "|" << std::fixed << std::setprecision(6) << entry.key << ":" << entry.recno;
+        out << std::fixed << std::setprecision(6);
+        for (const LeafEntry& e : node.leaf) {
+            out << "|" << e.key << ":" << e.rid.block << "," << e.rid.slot;
         }
         out << "\n";
     }
@@ -377,13 +379,11 @@ BPTree::DeletionStats BPTree::deleteHighFTPCT(Database& db, float threshold) {
     }
     stats.average_ft_pct = stats.games_deleted > 0 ? sum_ft_pct / stats.games_deleted : 0.0;
     
-    // Track accessed data blocks (using RID to block mapping)
+    // Track accessed data blocks (using RID)
     std::unordered_set<uint32_t> accessed_blocks;
-    size_t records_per_block = db.getRecordsPerBlock();
-    if (records_per_block == 0) records_per_block = 1;
     
     for (const auto& entry : records_to_delete) {
-        uint32_t block_num = entry.recno / records_per_block;
+        uint32_t block_num = entry.rid.block;
         accessed_blocks.insert(block_num);
     }
     stats.data_blocks_accessed = accessed_blocks.size();
