@@ -245,9 +245,7 @@ void BPTree::loadFromBinaryFile(const std::string& filename) {
     }
 }
 
-// TASK 3 IMPLEMENTATION
 
-// BRUTE FORCE SOLUTION - Completely rebuild the B+ tree structure
 void BPTree::updateInternalKeys(uint32_t node_id) {
     if (node_id == UINT32_MAX) return;
     
@@ -435,12 +433,6 @@ BPTree::DeletionStats BPTree::deleteHighFTPCT(Database& db, float threshold) {
         }
     }
     
-    // Handle underflow in modified leaves
-    for (uint32_t leaf_id : modified_leaves) {
-        if (isNodeUnderflow(leaf_id)) {
-            handleUnderflow(leaf_id);
-        }
-    }
     
     auto end_time = std::chrono::high_resolution_clock::now();
     stats.running_time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
