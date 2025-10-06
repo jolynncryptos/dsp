@@ -12,7 +12,22 @@ It demonstrates fundamental concepts in database systems such as:
 
 ## Installation & Setup
 
+### Prerequisites
+- C++ compiler (GCC, Clang, or MSVC)
+- Git
+
+### Quick Setup
+
+**Windows:**
+- Install Visual Studio Community or MinGW-w64
+- Verify: `g++ --version`
+
 ### 1. Clone the repository
 ```bash
 git clone https://github.com/jolynncryptos/dsp.git
 cd dsp
+
+### 2. Switch to Main Branch 
+git checkout main
+
+### 3. Compile and Run
