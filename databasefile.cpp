@@ -169,9 +169,8 @@ size_t Database::getTotalRecords() const {
 }
 
 size_t Database::getRecordsPerBlock() const {
-    if (blocks.empty()) return 0;
-    // average records per block (integer)
-    return totalRecords / blocks.size();
+    if (recordSize == 0) return 0;
+    return blockSize / recordSize;
 }
 
 size_t Database::getNumBlocks() const {
