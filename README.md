@@ -22,6 +22,10 @@ It demonstrates fundamental concepts in database systems such as:
 - Install Visual Studio Community or MinGW-w64
 - Verify: `g++ --version`
 
+**MacOS:**
+- xcode-select --install
+- Verify: `g++ --version`
+
 ### 1. Clone the repository
 ```bash
 git clone https://github.com/jolynncryptos/dsp.git
