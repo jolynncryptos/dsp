@@ -26,8 +26,11 @@ It demonstrates fundamental concepts in database systems such as:
 ```bash
 git clone https://github.com/jolynncryptos/dsp.git
 cd dsp
+```
 
 ### 2. Switch to Main Branch 
+```bash
 git checkout main
+```
 
 ### 3. Compile and Run
